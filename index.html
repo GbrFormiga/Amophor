@@ -1,0 +1,448 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#242128">
+  <title>Amophor — Open Workspace</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body data-theme="dark">
+<div class="app" id="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="logo.png" alt="Amophor">
+      <div class="brand-name">
+        <strong>AMOPHOR</strong>
+        <small>Open Workspace</small>
+      </div>
+    </div>
+
+    <button class="nav" id="homeBtn">
+      ⌂ <span class="nav-label">Meus projetos</span>
+    </button>
+
+    <div class="side-title">EXPLORADOR</div>
+    <div id="tree" class="tree"></div>
+
+    <div class="side-bottom">
+      <button class="nav" id="aboutBtn">
+        ⓘ <span class="nav-label">Sobre</span>
+      </button>
+
+      <button class="nav" id="themeBtn">
+        ☀ <span class="nav-label">Tema claro</span>
+      </button>
+
+      <button class="nav" id="exportBtn">
+        ⇩ <span class="nav-label">Exportar backup</span>
+      </button>
+
+      <button class="nav" id="importBtn">
+        ⇧ <span class="nav-label">Importar backup</span>
+      </button>
+
+      <input
+        type="file"
+        id="backupInput"
+        accept=".json,application/json"
+        hidden
+      >
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="topbar">
+      <div class="top-left">
+        <button
+          id="sidebarBtn"
+          class="icon-btn"
+          title="Recolher barra lateral"
+        >☰</button>
+
+        <span id="breadcrumbs">Meus projetos</span>
+      </div>
+
+      <div class="top-actions">
+        <button
+          id="focusBtn"
+          class="secondary"
+          title="Alternar modo foco (Alt + F)"
+        >⛶ Modo foco</button>
+
+        <button id="renameBtn" class="secondary hidden">
+          Renomear
+        </button>
+
+        <button id="deleteBtn" class="danger hidden">
+          Excluir
+        </button>
+      </div>
+    </header>
+
+    <section id="projectsView" class="page">
+      <div class="heading">
+        <div>
+          <p class="eyebrow">SEU ESPAÇO CRIATIVO</p>
+          <h1>Meus projetos</h1>
+          <p>Um lugar para todas as suas ideias.</p>
+        </div>
+
+        <button id="newProjectBtn" class="primary">
+          + Novo projeto
+        </button>
+      </div>
+
+      <div id="projectGrid" class="grid"></div>
+    </section>
+
+    <section id="folderView" class="page hidden">
+      <div class="heading">
+        <div>
+          <p class="eyebrow">ORGANIZAÇÃO</p>
+          <h1 id="folderTitle"></h1>
+          <p>Pastas organizam. Workspaces dão vida às ideias.</p>
+        </div>
+
+        <div class="actions">
+          <button id="newFolderBtn" class="secondary">
+            + Pasta
+          </button>
+
+          <button id="newWorkspaceBtn" class="primary">
+            + Workspace
+          </button>
+        </div>
+      </div>
+
+      <div id="folderGrid" class="grid"></div>
+    </section>
+
+    <section id="workspaceView" class="workspace hidden">
+
+      <div class="workspace-top" id="workspaceTop">
+        <div class="bar-heading">
+          <span>FERRAMENTAS</span>
+
+          <button
+            id="collapseTopBtn"
+            class="collapse-btn"
+            title="Minimizar ou expandir"
+          >▲</button>
+        </div>
+
+        <div class="toolbar-content">
+          <div class="toolbar">
+
+            <button class="tool active" data-tool="select">
+              ↖ Selecionar
+            </button>
+
+            <button class="tool" data-tool="lasso">
+              ▧ Seleção por área
+            </button>
+
+            <button class="tool" data-tool="pan">
+              ✥ Mover tela
+            </button>
+
+            <button class="tool" data-tool="pen">
+              ✎ Desenhar
+            </button>
+
+            <button class="tool" data-tool="eraser">
+              ▧ Borracha
+            </button>
+
+            <button class="tool" data-tool="grid">
+              ▦ Quadradinhos
+            </button>
+
+            <button class="tool" data-tool="connect">
+              ◇ Conectar
+            </button>
+
+            <span class="separator"></span>
+
+            <button class="tool" id="addText">
+              + Texto
+            </button>
+
+            <button class="tool" id="addImage">
+              ▧ Imagem
+            </button>
+
+            <button class="tool" id="addRect">
+              ▭ Retângulo
+            </button>
+
+            <button class="tool" id="addCircle">
+              ◯ Círculo
+            </button>
+
+            <button class="tool" id="addLine">
+              ╱ Linha
+            </button>
+
+            <span class="separator"></span>
+
+            <label class="toolbar-label">
+              Cor
+              <input
+                id="colorPicker"
+                type="color"
+                value="#805b91"
+              >
+            </label>
+
+            <label class="toolbar-label">
+              Pincel
+              <input
+                id="brushSize"
+                type="range"
+                min="1"
+                max="40"
+                value="5"
+              >
+            </label>
+
+            <button class="tool" id="undoBtn">
+              ↶ Desfazer
+            </button>
+
+            <button class="tool danger-text" id="deleteObject">
+              ✕ Excluir
+            </button>
+
+            <input
+              id="imageInput"
+              type="file"
+              accept="image/*"
+              hidden
+            >
+
+          </div>
+        </div>
+      </div>
+
+      <div id="toolHint" class="tool-hint hidden"></div>
+
+      <div id="viewport" class="viewport">
+        <div id="board" class="board">
+
+          <canvas
+            id="drawingCanvas"
+            width="5000"
+            height="3500"
+          ></canvas>
+
+          <svg
+            id="connectionLayer"
+            width="5000"
+            height="3500"
+            viewBox="0 0 5000 3500"
+          ></svg>
+
+          <div id="objectLayer"></div>
+
+          <!-- Retângulo criado durante a seleção por área -->
+          <div
+            id="marqueeBox"
+            class="marquee-box hidden"
+          ></div>
+
+          <!-- Área delimitadora dos objetos selecionados -->
+          <div
+            id="selectionBox"
+            class="selection-box hidden"
+          >
+            <div
+              id="groupResizeHandle"
+              class="group-resize-handle"
+              title="Redimensionar grupo"
+            ></div>
+          </div>
+
+        </div>
+      </div>
+
+      <footer
+        id="workspaceFooter"
+        class="workspace-footer"
+      >
+        <div class="footer-heading">
+          <span id="workspaceLabel"></span>
+
+          <button
+            id="collapseBottomBtn"
+            class="collapse-btn"
+            title="Minimizar ou expandir"
+          >▼</button>
+        </div>
+
+        <div class="footer-content">
+          <div class="zoom-controls">
+            <button id="zoomOut">−</button>
+            <span id="zoomLabel">75%</span>
+            <button id="zoomIn">+</button>
+            <button id="resetView">Centralizar</button>
+          </div>
+
+          <span class="footer-tip">
+            Ctrl + roda do mouse para zoom
+          </span>
+        </div>
+      </footer>
+    </section>
+
+    <section id="aboutView" class="page about-page hidden">
+      <div class="about-card">
+
+        <img
+          class="about-logo"
+          src="logo.png"
+          alt="Logo do Amophor"
+        >
+
+        <p class="eyebrow">SOBRE O PROJETO</p>
+        <h1>Amophor</h1>
+        <p class="eyebrow">OPEN WORKSPACE</p>
+
+        <p>
+          <strong>Criado por Oformiga</strong>,
+          Amophor é um espaço criativo desenvolvido para
+          organizar ideias, conectar conceitos e dar forma
+          a projetos de maneira simples e livre.
+        </p>
+
+        <p>
+          O programa nasceu como uma ferramenta
+          <em>quebra-galho</em>, pensada originalmente para
+          desenvolvedores de jogos independentes
+          (<em>gamedevs</em>) que precisam de um lugar para
+          reunir anotações, personagens, histórias,
+          referências visuais e outros elementos durante
+          o processo de criação. Sua proposta nunca foi
+          substituir ferramentas profissionais ou oferecer
+          soluções excessivamente complexas, mas reunir
+          recursos úteis em um ambiente acessível,
+          prático e personalizável.
+        </p>
+
+        <p>
+          Apesar de suas origens ligadas ao desenvolvimento
+          de jogos, o Amophor não se limita a esse universo.
+          Escritores, artistas, estudantes e qualquer pessoa
+          que precise organizar pensamentos ou desenvolver
+          projetos podem encontrar nele um espaço para
+          experimentar, planejar e criar sem depender
+          de uma estrutura rígida.
+        </p>
+
+        <p>
+          O nome <strong>Amophor</strong> foi inspirado na
+          <em>Amorphophallus</em>, um gênero de plantas
+          conhecido por suas formas incomuns e aparência
+          marcante. A escolha reflete a identidade do
+          programa: algo diferente, um pouco estranho
+          e fora dos padrões convencionais, mas que possui
+          sua própria beleza e utilidade.
+        </p>
+
+        <p>
+          Mais do que uma ferramenta de produtividade,
+          o Amophor é um pequeno projeto independente,
+          construído a partir de necessidades reais
+          e da vontade de transformar soluções improvisadas
+          em algo que outras pessoas também possam aproveitar.
+        </p>
+
+        <div class="about-divider"></div>
+
+        <div class="creator">
+          <img
+            src="minha-foto.png"
+            alt="😛"
+            onerror="this.style.display='none';
+              this.nextElementSibling.style.display='grid'"
+          >
+
+          <div
+            class="photo-placeholder"
+            style="display:none"
+          >
+            Sua foto aqui
+          </div>
+
+          <div>
+            <span class="eyebrow">
+              DESENVOLVIMENTO E CRIAÇÃO
+            </span>
+            <h2>Oformiga</h2>
+            <p>Gabriel Ferreira Formiga</p>
+            <p>Criador e desenvolvedor do Amophor.</p>
+          </div>
+        </div>
+
+        <p class="version">
+          Amophor — Open Workspace · Versão 6.2
+        </p>
+
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Controles que permanecem acessíveis no modo foco -->
+<button
+  id="focusExitBtn"
+  class="floating-action hidden"
+  title="Sair do modo foco (Alt + F)"
+>
+  ⛶ Sair do foco
+</button>
+
+<button
+  id="reopenSidebarBtn"
+  class="floating-action hidden"
+  title="Mostrar barra lateral"
+>
+  ☰
+</button>
+
+<dialog id="nameDialog">
+  <form id="nameForm">
+    <h2 id="dialogTitle"></h2>
+
+    <input
+      id="nameInput"
+      maxlength="100"
+      required
+    >
+
+    <div class="dialog-actions">
+      <button
+        type="button"
+        id="cancelDialog"
+        class="secondary"
+      >
+        Cancelar
+      </button>
+
+      <button class="primary" type="submit">
+        Confirmar
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<script src="script.js"></script>
+</body>
+</html>
