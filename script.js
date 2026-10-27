@@ -37,6 +37,8 @@ let lastPaintPoint = null;
 let history = [];
 let modalAction = null;
 let saveTimer = null;
+let clipboard = null;
+let pasteOffset = 0;
 
 const viewport = $("viewport");
 const board = $("board");
@@ -93,6 +95,160 @@ function isDarkColor(hex) {
     rgb[2] * .114
   ) < 155;
 }
+
+// TRANSFERÊNCIA DE PROJETOS E CONTEÚDO
+
+let transferAction = "export";
+
+function updateTransferDialog() {
+  const kind = $("transferKind").value;
+  const descriptions = {
+    backup: "Exporta ou mescla todos os projetos do arquivo.",
+    project: "Transfere o projeto que está aberto no momento.",
+    folder: "Transfere a pasta atualmente aberta.",
+    workspace: "Transfere o workspace atualmente aberto."
+  };
+
+  $("transferTitle").textContent =
+    transferAction === "export" ? "Exportar conteúdo" : "Importar conteúdo";
+  $("runTransfer").textContent =
+    transferAction === "export" ? "Exportar" : "Escolher arquivo";
+  $("transferDescription").textContent = descriptions[kind];
+
+  [...$("transferKind").options].forEach(option => {
+    option.disabled = false;
+    if (transferAction !== "export") return;
+    if (option.value === "project") option.disabled = !project();
+    if (option.value === "folder") {
+      option.disabled = currentNode()?.type !== "folder";
+    }
+    if (option.value === "workspace") {
+      option.disabled = currentNode()?.type !== "workspace";
+    }
+  });
+}
+
+function openTransferDialog(action) {
+  transferAction = action;
+  const kind = workspace() ? "workspace" :
+    currentNode()?.type === "folder" ? "folder" :
+    project() ? "project" : "backup";
+  $("transferKind").value = action === "export" ? kind : "backup";
+  updateTransferDialog();
+  $("transferDialog").showModal();
+}
+
+function downloadJson(value, filename) {
+  const blob = new Blob(
+    [JSON.stringify(value, null, 2)],
+    { type: "application/json" }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportTransfer() {
+  const kind = $("transferKind").value;
+  let item;
+
+  if (kind === "backup") {
+    downloadJson(data, "amophor-backup.json");
+    return;
+  }
+
+  if (kind === "project") item = project();
+  if (kind === "folder" || kind === "workspace") {
+    item = currentNode();
+  }
+
+  if (!item || (kind !== "project" && item.type !== kind)) {
+    alert("Abra o conteúdo que deseja exportar primeiro.");
+    return;
+  }
+
+  downloadJson(
+    { format: "amophor-item-v1", kind, item },
+    `amophor-${kind}-${item.name.replace(/[^a-z0-9_-]+/gi, "-")}.json`
+  );
+}
+
+$("exportBtn").onclick = () => openTransferDialog("export");
+$("importBtn").onclick = () => openTransferDialog("import");
+$("transferKind").onchange = updateTransferDialog;
+$("cancelTransfer").onclick = () => $("transferDialog").close();
+
+$("runTransfer").onclick = () => {
+  if (transferAction === "export") {
+    exportTransfer();
+    $("transferDialog").close();
+  } else {
+    $("transferDialog").close();
+    $("backupInput").click();
+  }
+};
+
+$("backupInput").onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  try {
+    const imported = JSON.parse(await file.text());
+    const additions = [];
+    let targetNode = null;
+    let importedNode = null;
+
+    if (imported.format === "amophor-item-v1") {
+      const { kind, item } = imported;
+      const isProject = kind === "project" && item?.children;
+      const validNode = ["folder", "workspace"].includes(kind) &&
+        item?.type === kind;
+      if (!isProject && !validNode) throw new Error("Arquivo inválido");
+
+      const copy = cloneNodeWithFreshIds(item);
+      if (kind === "project") {
+        additions.push(copy);
+      } else {
+        targetNode = currentNode()?.type === "folder"
+          ? currentNode()
+          : project();
+        if (!targetNode) throw new Error("Abra um projeto antes de importar");
+        importedNode = copy;
+      }
+    } else if (Array.isArray(imported.projects)) {
+      imported.projects.forEach(p => additions.push(cloneNodeWithFreshIds(p)));
+    } else {
+      throw new Error("Arquivo inválido");
+    }
+
+    const oldProjects = data.projects;
+    const oldChildren = targetNode?.children;
+    if (targetNode) {
+      targetNode.children = [...targetNode.children, importedNode];
+    }
+    data.projects = [...oldProjects, ...additions];
+    try {
+      migrateData();
+      saveNow();
+    } catch (error) {
+      data.projects = oldProjects;
+      if (targetNode) targetNode.children = oldChildren;
+      throw error;
+    }
+
+    if (workspace()) openWorkspace(false);
+    else if (project()) openFolderView();
+    else home();
+  } catch (error) {
+    console.error(error);
+    alert("Não foi possível importar este arquivo.");
+  } finally {
+    e.target.value = "";
+  }
+};
 
 // PROJETOS, PASTAS E WORKSPACES
 
@@ -154,6 +310,37 @@ function removeNode(nodes, id) {
         removeNode(n.children, id)) return true;
   }
   return false;
+}
+
+function cloneNodeWithFreshIds(source) {
+  const copy = JSON.parse(JSON.stringify(source));
+
+  function visit(node) {
+    node.id = uid();
+
+    if (node.type === "workspace") {
+      const objectIds = new Map();
+      (node.objects || []).forEach(o => {
+        const oldId = o.id;
+        o.id = uid();
+        objectIds.set(oldId, o.id);
+      });
+      (node.connections || []).forEach(c => {
+        c.id = uid();
+        c.from = objectIds.get(c.from) || c.from;
+        c.to = objectIds.get(c.to) || c.to;
+      });
+      (node.strokes || []).forEach(s => { s.id = uid(); });
+      (node.cells || []).forEach(c => { c.id = uid(); });
+    } else if (node.type === "folder") {
+      (node.children || []).forEach(visit);
+    } else if (Array.isArray(node.children)) {
+      node.children.forEach(visit);
+    }
+  }
+
+  visit(copy);
+  return copy;
 }
 
 // COMPATIBILIDADE COM BACKUPS ANTIGOS
@@ -254,6 +441,8 @@ function migrateData() {
           n.strokes ||= [];
           n.connections ||= [];
           n.cells ||= [];
+          n.strokes.forEach(s => { s.id ||= uid(); });
+          n.cells.forEach(c => { c.id ||= uid(); });
 
           n.objects.forEach(o => {
             if (o.type === "text") {
@@ -378,6 +567,21 @@ function makeCard(item, type, onOpen) {
   };
 
   actions.append(button, input);
+
+  if (type === "workspace") {
+    const duplicate = document.createElement("button");
+    duplicate.className = "secondary duplicate-workspace";
+    duplicate.textContent = "Duplicar workspace";
+    duplicate.onclick = () => {
+      const copy = cloneNodeWithFreshIds(item);
+      copy.name = `${item.name} (cópia)`;
+      container().children.push(copy);
+      save();
+      openFolderView();
+    };
+    actions.append(duplicate);
+  }
+
   el.append(cover, info, actions);
   return el;
 }
@@ -580,13 +784,12 @@ $("sidebarBtn").onclick = () => {
   const app = $("app");
 
   if (app.classList.contains("sidebar-hidden")) {
-    // Oculto → Normal
     app.classList.remove("sidebar-hidden", "collapsed");
+  } else if (isMobile()) {
+    app.classList.toggle("collapsed");
   } else if (app.classList.contains("collapsed")) {
-    // Compacto → Oculto
     app.classList.add("sidebar-hidden");
   } else {
-    // Normal → Compacto
     app.classList.add("collapsed");
   }
 
@@ -808,12 +1011,81 @@ function undo() {
   redraw();
 }
 
+function copySelection() {
+  const w = workspace();
+  if (!w || !selectedIds.size) return;
+
+  clipboard = {
+    objects: w.objects.filter(o => selectedIds.has(o.id))
+      .map(o => JSON.parse(JSON.stringify(o))),
+    cells: w.cells.filter(c => selectedIds.has(`cell:${c.id}`))
+      .map(c => JSON.parse(JSON.stringify(c))),
+    strokes: w.strokes.filter(s => selectedIds.has(`stroke:${s.id}`))
+      .map(s => JSON.parse(JSON.stringify(s))),
+    connections: w.connections.filter(c =>
+      selectedIds.has(c.from) && selectedIds.has(c.to)
+    ).map(c => JSON.parse(JSON.stringify(c)))
+  };
+
+  pasteOffset = 0;
+}
+
+function pasteSelection() {
+  const w = workspace();
+  if (!w || !clipboard) return;
+
+  remember();
+  pasteOffset += 40;
+  const dx = pasteOffset;
+  const idMap = new Map();
+  const pastedIds = new Set();
+
+  for (const original of clipboard.objects) {
+    const item = JSON.parse(JSON.stringify(original));
+    const previousId = item.id;
+    item.id = uid();
+    idMap.set(previousId, item.id);
+    item.x += dx;
+    item.y += dx;
+    w.objects.push(item);
+    pastedIds.add(item.id);
+  }
+
+  for (const original of clipboard.cells) {
+    const cell = { ...original, id: uid(), x: original.x + dx / CELL, y: original.y + dx / CELL };
+    w.cells.push(cell);
+    pastedIds.add(`cell:${cell.id}`);
+  }
+
+  for (const original of clipboard.strokes) {
+    const item = JSON.parse(JSON.stringify(original));
+    item.id = uid();
+    item.points = item.points.map(p => ({ x: p.x + dx, y: p.y + dx }));
+    w.strokes.push(item);
+    pastedIds.add(`stroke:${item.id}`);
+  }
+
+  for (const original of clipboard.connections) {
+    const from = idMap.get(original.from);
+    const to = idMap.get(original.to);
+    if (from && to) w.connections.push({ id: uid(), from, to });
+  }
+
+  selectedIds = pastedIds;
+  selected = pastedIds.size === 1 ? [...pastedIds][0] : null;
+  save();
+  redraw();
+  renderObjects();
+}
+
 $("undoBtn").onclick = undo;
 
 document.addEventListener("keydown", e => {
-  const editing = ["INPUT", "TEXTAREA"].includes(
+  const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(
     document.activeElement?.tagName
   );
+  const key = e.key.toLowerCase();
+  const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
 
   if (
     (e.ctrlKey || e.metaKey) &&
@@ -824,6 +1096,20 @@ document.addEventListener("keydown", e => {
     undo();
   }
 
+  if ((e.ctrlKey || e.metaKey) && key === "c" && !editing) {
+    if (selectedIds.size) {
+      e.preventDefault();
+      copySelection();
+    }
+  }
+
+  if ((e.ctrlKey || e.metaKey) && key === "v" && !editing) {
+    if (clipboard && workspace()) {
+      e.preventDefault();
+      pasteSelection();
+    }
+  }
+
   if (
     ["Delete", "Backspace"].includes(e.key) &&
     !editing && (selected || selectedIds.size)
@@ -832,15 +1118,25 @@ document.addEventListener("keydown", e => {
     deleteSelected();
   }
 
-  if (e.key === "Escape" && !editing && selectedIds.size) {
+  if (e.key === "Escape" && !editing) {
+    setTool("select");
     selectedIds.clear();
     selected = null;
+    connectFrom = null;
+    $("shapeMenu").open = false;
     renderObjects();
+    redraw();
+    return;
   }
 
-  if (e.key === "Escape" && connectFrom) {
-    connectFrom = null;
-    renderObjects();
+  if (!editing && !hasModifier && workspace()) {
+    if (key === "d") setTool("pen");
+    else if (key === "e") setTool("eraser");
+    else if (key === "p") setTool("grid");
+    else if (key === "v") setTool("eyedropper");
+    else if (key === "c") $("colorPicker").click();
+    else if (key === "i") $("imageInput").click();
+    else if (key === "t") addObject("text");
   }
 });
 
@@ -855,35 +1151,17 @@ function setTool(value) {
   });
 
   const drawing = ["pen", "eraser", "grid"].includes(value);
-  canvas.style.pointerEvents = drawing ? "auto" : "none";
+  canvas.style.pointerEvents =
+    drawing || ["select", "lasso", "eyedropper"].includes(value)
+      ? "auto"
+      : "none";
 
   viewport.style.cursor =
     value === "pen" ? "crosshair" :
     value === "eraser" ? "cell" :
     value === "grid" ? "crosshair" :
-    value === "pan" ? "grab" :
+    value === "eyedropper" ? "copy" :
     value === "lasso" ? "crosshair" : "default";
-
-  const hint = $("toolHint");
-  hint.classList.toggle(
-    "hidden",
-    !["connect", "eraser", "grid", "lasso"].includes(value)
-  );
-
-  if (value === "lasso") {
-    hint.textContent =
-      "Arraste uma área para selecionar vários elementos. " +
-      "Shift + clique adiciona ou remove.";
-  } else if (value === "connect") {
-    hint.textContent =
-      "Clique em dois elementos para conectá-los.";
-  } else if (value === "eraser") {
-    hint.textContent =
-      "Arraste a borracha para apagar partes dos desenhos.";
-  } else if (value === "grid") {
-    hint.textContent =
-      "Pinte quadradinhos alinhados à grade de 40 × 40.";
-  }
 
   if (workspace()) renderObjects();
 }
@@ -897,6 +1175,10 @@ document.querySelectorAll("[data-tool]").forEach(b => {
 function addObject(type) {
   if (!workspace()) return;
   remember();
+
+  if (["rect", "circle", "line"].includes(type)) {
+    $("shapeMenu").open = false;
+  }
 
   const p = centerPoint();
   const o = {
@@ -964,6 +1246,14 @@ function deleteSelected() {
       o => !ids.has(o.id)
     );
 
+    workspace().strokes = workspace().strokes.filter(
+      s => !ids.has(`stroke:${s.id}`)
+    );
+
+    workspace().cells = workspace().cells.filter(
+      c => !ids.has(`cell:${c.id}`)
+    );
+
     workspace().connections = workspace().connections.filter(
       c => !ids.has(c.from) && !ids.has(c.to)
     );
@@ -973,6 +1263,7 @@ function deleteSelected() {
   selectedIds.clear();
   save();
   renderObjects();
+  redraw();
 }
 
 $("deleteObject").onclick = deleteSelected;
@@ -991,6 +1282,7 @@ function select(id, additive = false) {
     : null;
 
   renderObjects();
+  redraw();
 }
 
 function groupBounds() {
@@ -1013,16 +1305,69 @@ function groupBounds() {
   };
 }
 
+function selectionBounds() {
+  const bounds = [];
+  const w = workspace();
+  if (!w) return null;
+
+  for (const o of w.objects) {
+    if (selectedIds.has(o.id)) {
+      bounds.push({ x: o.x, y: o.y, w: o.w, h: o.h });
+    }
+  }
+
+  for (const cell of w.cells) {
+    if (selectedIds.has(`cell:${cell.id}`)) {
+      bounds.push({
+        x: cell.x * CELL,
+        y: cell.y * CELL,
+        w: CELL,
+        h: CELL
+      });
+    }
+  }
+
+  for (const s of w.strokes) {
+    if (!selectedIds.has(`stroke:${s.id}`) || !s.points?.length) {
+      continue;
+    }
+
+    const pad = (s.size || 4) / 2;
+    const xs = s.points.map(p => p.x);
+    const ys = s.points.map(p => p.y);
+    const x = Math.min(...xs) - pad;
+    const y = Math.min(...ys) - pad;
+    bounds.push({
+      x,
+      y,
+      w: Math.max(1, Math.max(...xs) - Math.min(...xs) + pad * 2),
+      h: Math.max(1, Math.max(...ys) - Math.min(...ys) + pad * 2)
+    });
+  }
+
+  if (!bounds.length) return null;
+
+  const x = Math.min(...bounds.map(b => b.x));
+  const y = Math.min(...bounds.map(b => b.y));
+  const right = Math.max(...bounds.map(b => b.x + b.w));
+  const bottom = Math.max(...bounds.map(b => b.y + b.h));
+  return { x, y, w: right - x, h: bottom - y };
+}
+
 function updateSelectionBox() {
   const box = $("selectionBox");
   if (!box) return;
 
-  const b = groupBounds();
+  const b = selectionBounds();
+  const onlyObjects = [...selectedIds].every(id =>
+    workspace()?.objects.some(o => o.id === id)
+  );
 
   box.classList.toggle(
     "hidden",
     !b ||
     selectedIds.size < 2 ||
+    !onlyObjects ||
     !["select", "lasso"].includes(tool)
   );
 
@@ -1044,13 +1389,21 @@ function beginGroupMove(e) {
   gesture = {
     kind: "group-move",
     start: p,
-    items: workspace().objects
-      .filter(o => selectedIds.has(o.id))
-      .map(o => ({
-        id: o.id,
-        x: o.x,
-        y: o.y
-      }))
+    items: [
+      ...workspace().objects
+        .filter(o => selectedIds.has(o.id))
+        .map(o => ({ type: "object", id: o.id, x: o.x, y: o.y })),
+      ...workspace().cells
+        .filter(c => selectedIds.has(`cell:${c.id}`))
+        .map(c => ({ type: "cell", id: c.id, x: c.x, y: c.y })),
+      ...workspace().strokes
+        .filter(s => selectedIds.has(`stroke:${s.id}`))
+        .map(s => ({
+          type: "stroke",
+          id: s.id,
+          points: s.points.map(p => ({ ...p }))
+        }))
+    ]
   };
 }
 
@@ -1062,17 +1415,32 @@ function moveGroup(e) {
   const dy = p.y - gesture.start.y;
 
   for (const start of gesture.items) {
-    const o = workspace().objects.find(
-      x => x.id === start.id
-    );
-
-    if (o) {
+    if (start.type === "object") {
+      const o = workspace().objects.find(x => x.id === start.id);
+      if (!o) continue;
       o.x = start.x + dx;
       o.y = start.y + dy;
+    } else if (start.type === "cell") {
+      const cell = workspace().cells.find(
+        c => c.id === start.id
+      );
+      if (cell) {
+        cell.x = Math.round(start.x + dx / CELL);
+        cell.y = Math.round(start.y + dy / CELL);
+      }
+    } else if (start.type === "stroke") {
+      const s = workspace().strokes.find(x => x.id === start.id);
+      if (s) {
+        s.points = start.points.map(p => ({
+          x: p.x + dx,
+          y: p.y + dy
+        }));
+      }
     }
   }
 
   syncObjectPositions();
+  redraw();
 }
 
 function syncObjectPositions() {
@@ -1530,6 +1898,12 @@ function renderObjects() {
     el.onpointerdown = e => {
       if (e.button !== 0) return;
 
+      if (tool === "eyedropper") {
+        e.stopPropagation();
+        setPickedColor(o.color || $("colorPicker").value);
+        return;
+      }
+
       if (tool === "connect") {
         e.stopPropagation();
         connectClick(o.id);
@@ -1790,7 +2164,7 @@ $("imageInput").onchange = async e => {
 
 
 
- // DESENHO LIVRE E QUADRADINHOS
+ // DESENHO LIVRE E PIXELS
 
 let marquee = null;
 
@@ -1800,7 +2174,7 @@ function redraw() {
   const w = workspace();
   if (!w) return;
 
-  // Quadradinhos pintados
+  // Pixels pintados
   for (const cell of w.cells) {
     ctx.fillStyle = validColor(cell.color);
     ctx.fillRect(
@@ -1809,6 +2183,19 @@ function redraw() {
       CELL,
       CELL
     );
+
+    if (selectedIds.has(`cell:${cell.id}`)) {
+      ctx.strokeStyle = "#91b49a";
+      ctx.lineWidth = 3 / zoom;
+      ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.strokeRect(
+        cell.x * CELL + 1,
+        cell.y * CELL + 1,
+        CELL - 2,
+        CELL - 2
+      );
+      ctx.setLineDash([]);
+    }
   }
 
   // Desenhos livres
@@ -1819,6 +2206,29 @@ function redraw() {
 
   for (const s of strokes) {
     if (!s.points?.length) continue;
+
+    const isSelected = selectedIds.has(`stroke:${s.id}`);
+    if (isSelected) {
+      ctx.strokeStyle = "#91b49a";
+      ctx.lineWidth = (s.size || 4) + 7 / zoom;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) {
+        ctx.lineTo(s.points[i].x, s.points[i].y);
+      }
+      if (s.points.length === 1) {
+        ctx.arc(
+          s.points[0].x,
+          s.points[0].y,
+          ((s.size || 4) + 7 / zoom) / 2,
+          0,
+          Math.PI * 2
+        );
+      }
+      ctx.stroke();
+    }
 
     ctx.strokeStyle = s.color || "#805b91";
     ctx.fillStyle = s.color || "#805b91";
@@ -1882,7 +2292,7 @@ function paintCell(p) {
     if (existing.color === color) return;
     existing.color = color;
   } else {
-    w.cells.push({ x, y, color });
+    w.cells.push({ id: uid(), x, y, color });
   }
 
   redraw();
@@ -2053,11 +2463,37 @@ function interpolate(a, b, spacing, callback) {
 // EVENTOS DO CANVAS
 
 canvas.onpointerdown = e => {
-  if (
-    !workspace() ||
-    e.button !== 0 ||
-    !["pen", "eraser", "grid"].includes(tool)
-  ) return;
+  if (!workspace() || e.button !== 0) return;
+
+  if (tool === "eyedropper") {
+    const color = sampleColorAt(point(e));
+    if (color) setPickedColor(color);
+    return;
+  }
+
+  if (["select", "lasso"].includes(tool)) {
+    const p = point(e);
+    const hit = hitDrawnElement(p);
+    if (!hit) return;
+
+    e.stopPropagation();
+    if (e.shiftKey) {
+      select(hit.id, true);
+      return;
+    }
+
+    if (!selectedIds.has(hit.id) || selectedIds.size < 2) {
+      selectedIds = new Set([hit.id]);
+      selected = hit.id;
+      redraw();
+    }
+
+    beginGroupMove(e);
+    canvas.setPointerCapture(e.pointerId);
+    return;
+  }
+
+  if (!["pen", "eraser", "grid"].includes(tool)) return;
 
   remember();
 
@@ -2083,6 +2519,11 @@ canvas.onpointerdown = e => {
 };
 
 canvas.onpointermove = e => {
+  if (gesture?.kind === "group-move") {
+    moveGroup(e);
+    return;
+  }
+
   if (!painting || !lastPaintPoint) return;
 
   const next = point(e);
@@ -2125,8 +2566,76 @@ function finishDrawing() {
   redraw();
 }
 
-canvas.onpointerup = finishDrawing;
-canvas.onpointercancel = finishDrawing;
+function hitDrawnElement(p) {
+  const w = workspace();
+  if (!w) return null;
+
+  for (let i = w.strokes.length - 1; i >= 0; i--) {
+    const s = w.strokes[i];
+    const radius = (s.size || 4) / 2 + 8 / zoom;
+    const points = s.points || [];
+    const hit = points.length === 1
+      ? distance(p, points[0]) <= radius
+      : points.slice(1).some((next, index) =>
+          distanceToSegment(p, points[index], next) <= radius
+        );
+    if (hit) return { type: "stroke", id: `stroke:${s.id}` };
+  }
+
+  for (let i = w.cells.length - 1; i >= 0; i--) {
+    const cell = w.cells[i];
+    if (
+      p.x >= cell.x * CELL && p.x <= (cell.x + 1) * CELL &&
+      p.y >= cell.y * CELL && p.y <= (cell.y + 1) * CELL
+    ) return { type: "cell", id: `cell:${cell.id}` };
+  }
+
+  return null;
+}
+
+function sampleColorAt(p) {
+  const w = workspace();
+  const hit = hitDrawnElement(p);
+
+  if (hit?.type === "cell") {
+    return w.cells.find(c => `cell:${c.id}` === hit.id)?.color;
+  }
+
+  if (hit?.type === "stroke") {
+    return w.strokes.find(s => `stroke:${s.id}` === hit.id)?.color;
+  }
+
+  const object = [...w.objects].reverse().find(o =>
+    p.x >= o.x && p.x <= o.x + o.w &&
+    p.y >= o.y && p.y <= o.y + o.h
+  );
+  if (object?.color) return object.color;
+
+  const rgb = getComputedStyle(board).backgroundColor.match(/\d+/g);
+  return rgb?.length >= 3
+    ? "#" + rgb.slice(0, 3).map(value =>
+        Number(value).toString(16).padStart(2, "0")
+      ).join("")
+    : null;
+}
+
+function setPickedColor(color) {
+  $("colorPicker").value = validColor(color, $("colorPicker").value);
+  setTool("select");
+}
+
+function finishCanvasGesture() {
+  finishDrawing();
+  if (gesture?.kind === "group-move") {
+    gesture = null;
+    save();
+    redraw();
+    renderObjects();
+  }
+}
+
+canvas.onpointerup = finishCanvasGesture;
+canvas.onpointercancel = finishCanvasGesture;
 
 // MOVER O QUADRO E SELECIONAR POR ÁREA
 
@@ -2238,6 +2747,22 @@ function finishPan() {
       }
     }
 
+    for (const cell of workspace()?.cells || []) {
+      const x = cell.x * CELL;
+      const y = cell.y * CELL;
+      if (x < right && x + CELL > left && y < bottom && y + CELL > top) {
+        selectedIds.add(`cell:${cell.id}`);
+      }
+    }
+
+    for (const s of workspace()?.strokes || []) {
+      const bounds = strokeBounds(s);
+      if (bounds && bounds.x < right && bounds.x + bounds.w > left &&
+          bounds.y < bottom && bounds.y + bounds.h > top) {
+        selectedIds.add(`stroke:${s.id}`);
+      }
+    }
+
     selected = selectedIds.size === 1
       ? [...selectedIds][0]
       : null;
@@ -2248,6 +2773,7 @@ function finishPan() {
 
     gesture = null;
     renderObjects();
+    redraw();
     return;
   }
 
@@ -2273,6 +2799,21 @@ function updateMarquee() {
   });
 }
 
+function strokeBounds(s) {
+  if (!s.points?.length) return null;
+  const pad = (s.size || 4) / 2;
+  const xs = s.points.map(p => p.x);
+  const ys = s.points.map(p => p.y);
+  const x = Math.min(...xs) - pad;
+  const y = Math.min(...ys) - pad;
+  return {
+    x,
+    y,
+    w: Math.max(1, Math.max(...xs) - Math.min(...xs) + pad * 2),
+    h: Math.max(1, Math.max(...ys) - Math.min(...ys) + pad * 2)
+  };
+}
+
 function renderSelectionOnly() {
   for (const el of layer.children) {
     el.classList.toggle(
@@ -2283,6 +2824,7 @@ function renderSelectionOnly() {
 
   updateSelectionBox();
   renderConnections();
+  redraw();
 }
 
 viewport.onpointerup = finishPan;
@@ -2310,69 +2852,6 @@ $("themeBtn").onclick = () => {
       ? "light"
       : "dark"
   );
-};
-
-// EXPORTAR BACKUP
-
-$("exportBtn").onclick = () => {
-  const blob = new Blob(
-    [JSON.stringify(data, null, 2)],
-    { type: "application/json" }
-  );
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = "amophor-backup-v6-2.json";
-  a.click();
-
-  setTimeout(
-    () => URL.revokeObjectURL(url),
-    1000
-  );
-};
-
-// IMPORTAR BACKUP
-
-$("importBtn").onclick = () =>
-  $("backupInput").click();
-
-$("backupInput").onchange = async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  try {
-    const imported = JSON.parse(
-      await file.text()
-    );
-
-    if (!Array.isArray(imported.projects)) {
-      throw new Error("Backup inválido");
-    }
-
-    if (!confirm(
-      "Substituir TODOS os projetos atuais pelo backup?"
-    )) return;
-
-    const old = data;
-    data = imported;
-
-    migrateData();
-
-    try {
-      saveNow();
-      home();
-    } catch (error) {
-      data = old;
-      throw error;
-    }
-  } catch (error) {
-    console.error(error);
-    alert("Não foi possível importar o backup.");
-  } finally {
-    e.target.value = "";
-  }
 };
 
 // INICIALIZAÇÃO

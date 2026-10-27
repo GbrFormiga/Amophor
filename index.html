@@ -40,11 +40,11 @@
       </button>
 
       <button class="nav" id="exportBtn">
-        ⇩ <span class="nav-label">Exportar backup</span>
+        ⇧ <span class="nav-label">Exportar</span>
       </button>
 
       <button class="nav" id="importBtn">
-        ⇧ <span class="nav-label">Importar backup</span>
+        ⇩ <span class="nav-label">Importar</span>
       </button>
 
       <input
@@ -102,7 +102,7 @@
       <div id="projectGrid" class="grid"></div>
     </section>
 
-    <section id="folderView" class="page hidden">
+    <section id="folderView" class="page folder-page hidden">
       <div class="heading">
         <div>
           <p class="eyebrow">ORGANIZAÇÃO</p>
@@ -140,7 +140,7 @@
         <div class="toolbar-content">
           <div class="toolbar">
 
-            <button class="tool active" data-tool="select">
+            <button class="tool active" data-tool="select" title="Cursor livre (Esc)">
               ↖ Selecionar
             </button>
 
@@ -148,20 +148,20 @@
               ▧ Seleção por área
             </button>
 
-            <button class="tool" data-tool="pan">
-              ✥ Mover tela
-            </button>
-
-            <button class="tool" data-tool="pen">
+            <button class="tool" data-tool="pen" title="Desenhar (D)">
               ✎ Desenhar
             </button>
 
-            <button class="tool" data-tool="eraser">
+            <button class="tool" data-tool="eraser" title="Borracha (E)">
               ▧ Borracha
             </button>
 
-            <button class="tool" data-tool="grid">
-              ▦ Quadradinhos
+            <button class="tool" data-tool="grid" title="Pixels (P)">
+              ▦ Pixels
+            </button>
+
+            <button class="tool" data-tool="eyedropper" title="Conta-gotas (V)">
+              ◉ Conta-gotas
             </button>
 
             <button class="tool" data-tool="connect">
@@ -170,29 +170,26 @@
 
             <span class="separator"></span>
 
-            <button class="tool" id="addText">
+            <button class="tool" id="addText" title="Texto (T)">
               + Texto
             </button>
 
-            <button class="tool" id="addImage">
+            <button class="tool" id="addImage" title="Imagem (I)">
               ▧ Imagem
             </button>
 
-            <button class="tool" id="addRect">
-              ▭ Retângulo
-            </button>
-
-            <button class="tool" id="addCircle">
-              ◯ Círculo
-            </button>
-
-            <button class="tool" id="addLine">
-              ╱ Linha
-            </button>
+            <details class="shape-menu" id="shapeMenu">
+              <summary class="tool">◇ Formas</summary>
+              <div class="shape-options">
+                <button class="tool" id="addRect">▭ Retângulo</button>
+                <button class="tool" id="addCircle">◯ Círculo</button>
+                <button class="tool" id="addLine">╱ Linha</button>
+              </div>
+            </details>
 
             <span class="separator"></span>
 
-            <label class="toolbar-label">
+            <label class="toolbar-label" title="Abrir seletor de cor (C)">
               Cor
               <input
                 id="colorPicker"
@@ -230,8 +227,6 @@
           </div>
         </div>
       </div>
-
-      <div id="toolHint" class="tool-hint hidden"></div>
 
       <div id="viewport" class="viewport">
         <div id="board" class="board">
@@ -438,6 +433,28 @@
 
       <button class="primary" type="submit">
         Confirmar
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="transferDialog">
+  <form id="transferForm" method="dialog">
+    <h2 id="transferTitle">Transferir conteúdo</h2>
+    <label class="transfer-label" for="transferKind">Conteúdo</label>
+    <select id="transferKind">
+      <option value="backup">Backup completo</option>
+      <option value="project">Projeto atual</option>
+      <option value="folder">Pasta atual</option>
+      <option value="workspace">Workspace atual</option>
+    </select>
+    <p id="transferDescription"></p>
+    <div class="dialog-actions">
+      <button type="button" id="cancelTransfer" class="secondary">
+        Cancelar
+      </button>
+      <button type="button" id="runTransfer" class="primary">
+        Exportar
       </button>
     </div>
   </form>

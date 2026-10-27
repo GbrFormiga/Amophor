@@ -297,6 +297,14 @@ button:hover {
   padding: 42px;
 }
 
+body[data-theme="dark"] .folder-page {
+  background: #19221c;
+}
+
+body[data-theme="light"] .folder-page {
+  background: #e8e6e9;
+}
+
 .heading {
   display: flex;
   align-items: center;
@@ -427,6 +435,8 @@ button:hover {
 }
 
 .workspace-top {
+  position: relative;
+  z-index: 10;
   flex: none;
   background: var(--side);
   border-bottom: 4px solid var(--purple);
@@ -455,7 +465,7 @@ button:hover {
 }
 
 .toolbar-content {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .toolbar {
@@ -511,6 +521,47 @@ button:hover {
   font-size: 11px;
 }
 
+.shape-menu {
+  position: relative;
+  z-index: 15;
+  flex: none;
+}
+
+.shape-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.shape-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.shape-options {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 12;
+  display: none;
+  min-width: 150px;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 8px 18px #0007;
+}
+
+.shape-menu[open] .shape-options,
+.shape-menu:hover .shape-options,
+.shape-menu:focus-within .shape-options {
+  display: flex;
+}
+
+.shape-options .tool {
+  text-align: left;
+  white-space: nowrap;
+}
+
 .toolbar input[type="color"] {
   width: 35px;
   height: 33px;
@@ -551,6 +602,7 @@ button:hover {
   flex: 1;
   min-height: 0;
   position: relative;
+  z-index: 1;
   overflow: hidden;
   background: #151318;
   touch-action: none;
@@ -586,7 +638,7 @@ button:hover {
 }
 
 #objectLayer {
-  z-index: 2;
+  z-index: 4;
 }
 
 #drawingCanvas {
@@ -986,6 +1038,30 @@ dialog input {
   border-radius: 7px;
 }
 
+dialog select {
+  width: 100%;
+  padding: 11px;
+  background: var(--bg);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: 7px;
+}
+
+.transfer-label {
+  display: block;
+  margin: 18px 0 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#transferDescription {
+  min-height: 36px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -1085,9 +1161,8 @@ dialog input {
   }
 
   .toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   .tool,
@@ -1216,6 +1291,15 @@ dialog input {
   .toolbar {
     gap: 5px;
     padding: 7px 8px;
+  }
+
+  .shape-menu[open] .shape-options {
+    position: static;
+    min-width: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 5px;
+    box-shadow: none;
   }
 
   .tool {
